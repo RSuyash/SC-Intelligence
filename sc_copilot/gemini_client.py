@@ -1,4 +1,6 @@
 import google.generativeai as genai
+import configparser
+import os
 
 class GeminiClient:
     """A client to interact with the Google Gemini API."""
@@ -6,7 +8,13 @@ class GeminiClient:
         if not api_key or 'YOUR_API_KEY' in api_key:
             raise ValueError("Gemini API key is not configured in config.ini")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        config = configparser.ConfigParser()
+        script_dir = os.path.dirname(__file__)
+        config_path = os.path.join(script_dir, 'gemini_config.ini')
+        config.read(config_path)
+        model_name = config['Gemini']['model_name']
+        self.model = genai.GenerativeModel(model_name)
 
     def generate_text(self, prompt):
         """Generates text from a given prompt."""

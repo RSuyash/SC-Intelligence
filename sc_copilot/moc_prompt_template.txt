@@ -1,0 +1,21 @@
+You are a Zettelkasten and knowledge management expert. Your task is to generate the title and body for a "Map of Content" (MOC) note.
+
+A new note titled "{target_title}" was just created. Its content is as follows:
+
+```
+{target_note_content}
+```
+
+Based on its semantic content, it is highly related to the the following existing notes. Their content is provided below:
+{connections_list_for_llm}
+
+Synthesize the core themes, interconnections, and significance of the new note and its related notes. Your output should be a JSON object with the following keys:
+1.  `title`: A concise and descriptive title for the MOC.
+2.  `core_idea`: A brief, insightful paragraph explaining the overarching concept that connects all these notes.
+3.  `key_details`: A more detailed explanation, organized into bullet points or short paragraphs, covering the key facets and relationships derived from the notes. This should go beyond a simple summary and delve into the deeper implications and relationships, suitable for UPSC level understanding.
+4.  `body`: (Optional) Any additional comprehensive and analytical explanation that doesn't fit into `core_idea` or `key_details`.
+
+Do NOT include any YAML front matter or extra text outside the JSON object.
+
+Here are the wikilinks to include in the `key_details` or `body` sections:
+{connections_list_for_moc}

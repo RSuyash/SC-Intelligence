@@ -28,7 +28,7 @@ def extract_yaml_front_matter(content):
                 front_matter[key] = value
     return front_matter, content[match.end():]
 
-def generate_moc_prompt(target_note_path, target_note_content, similar_notes_with_content):
+def generate_moc_prompt(target_note_path, target_note_content, similar_notes_with_content, template_path):
     """Creates the prompt for the LLM to generate a Map of Content."""
     target_title = os.path.basename(target_note_path).replace('.md', '')
     
@@ -38,29 +38,15 @@ def generate_moc_prompt(target_note_path, target_note_content, similar_notes_wit
         connections_list_for_llm += f"\n### {os.path.basename(note['path']).replace('.md', '')}\n```\n{note['content']}\n```"
         connections_list_for_moc += f"- `[[{os.path.basename(note['path']).replace('.md', '')}]]`\n"
     
-    prompt = f"""
-You are a Zettelkasten and knowledge management expert. Your task is to generate the title and body for a "Map of Content" (MOC) note.
+    with open(template_path, 'r', encoding='utf-8') as f:
+        prompt_template = f.read()
 
-A new note titled "{target_title}" was just created. Its content is as follows:
-
-```
-{target_note_content}
-```
-
-Based on its semantic content, it is highly related to the the following existing notes. Their content is provided below:
-{connections_list_for_llm}
-
-Synthesize the core themes, interconnections, and significance of the new note and its related notes. Your output should be a JSON object with the following keys:
-1.  `title`: A concise and descriptive title for the MOC.
-2.  `core_idea`: A brief, insightful paragraph explaining the overarching concept that connects all these notes.
-3.  `key_details`: A more detailed explanation, organized into bullet points or short paragraphs, covering the key facets and relationships derived from the notes. This should go beyond a simple summary and delve into the deeper implications and relationships, suitable for UPSC level understanding.
-4.  `body`: (Optional) Any additional comprehensive and analytical explanation that doesn't fit into `core_idea` or `key_details`.
-
-Do NOT include any YAML front matter or extra text outside the JSON object.
-
-Here are the wikilinks to include in the `key_details` or `body` sections:
-{connections_list_for_moc}
-"""
+    prompt = prompt_template.format(
+        target_title=target_title,
+        target_note_content=target_note_content,
+        connections_list_for_llm=connections_list_for_llm,
+        connections_list_for_moc=connections_list_for_moc
+    )
     return prompt
 
 def main():
@@ -92,37 +78,40 @@ def main():
         return
 
     # 1. Read the Smart Connections data
+    # 1. Initialize Smart Connections Reader and load data
+    print("✨ Initializing Knowledge Architect...")
     reader = SmartConnectionsReader(vault_path)
     reader.load_data()
+    print(f"📚 Loaded {len(reader.notes)} notes and {len(reader.blocks)} blocks from Smart Connections.")
     
-    # 2. Get user input for the target note
+    # 2. Determine target note
     if args.process_file:
         target_note_relative = args.process_file.strip().replace('\\', '/').strip('"\'')
-        print(f"Processing file from command line: {target_note_relative}")
+        print(f"\n📄 Processing: {target_note_relative}")
     else:
-        target_note_relative = input("Enter the relative path of the new note (e.g., 'UPSC/GS2/Polity.md'): ").strip().replace('\\', '/')
+        target_note_relative = input("\n📝 Enter the relative path of the new note (e.g., 'UPSC/GS2/Polity.md'): ").strip().replace('\\', '/')
     
-    # Obsidian paths are case-insensitive on some systems, find the correctly-cased path
+    # Find the correctly-cased path in the database
     found_path = next((path for path in reader.notes if path.lower() == target_note_relative.lower()), None)
     
     if not found_path:
-         print(f"Error: Could not find '{target_note_relative}' in the Smart Connections database.")
+         print(f"\n❌ Error: Note '{target_note_relative}' not found in the Smart Connections database. Please ensure it's indexed.")
          return
 
     target_note_content = reader.read_note_content(found_path)
     if not target_note_content:
-        print(f"Error: Could not read content for target note '{found_path}'.")
+        print(f"❌ Error: Could not read content for target note '{found_path}'. Please check file permissions or path.")
         return
 
     # 3. Find similar notes
-    print(f"\nFinding connections for '{found_path}'...")
+    print(f"🔍 Finding connections for '{found_path}'...")
     similar_notes_metadata = reader.find_similar_notes(found_path, n=5)
 
     if not similar_notes_metadata:
-        print("Could not find any similar notes to generate a MOC.")
+        print("\n⚠️ No strong connections found. Consider refining your note or adding more context.")
         return
 
-    print("Found connections:")
+    print("🔗 Found connections:")
     similar_notes_with_content = []
     for note_meta in similar_notes_metadata:
         note_content = reader.read_note_content(note_meta['path'])
@@ -132,25 +121,28 @@ def main():
                 'score': note_meta['score'],
                 'content': note_content
             })
-            print(f"  - {note_meta['path']} (Score: {note_meta['score']:.2f})")
+            print(f"  - {os.path.basename(note_meta['path']).replace('.md', '')} (Score: {note_meta['score']:.2f})")
         else:
-            print(f"  - Warning: Could not read content for similar note '{note_meta['path']}'. Skipping.")
+            print(f"  - ⚠️ Warning: Could not read content for '{os.path.basename(note_meta['path']).replace('.md', '')}'. Skipping.")
 
     if not similar_notes_with_content:
-        print("No similar notes with readable content found to generate a MOC.")
+        print("\n⚠️ No readable content from connected notes. Cannot generate MOC.")
         return
 
     # 4. Generate the MOC with Gemini
+    print("\n🧠 Generating Map of Content with Gemini...")
     # First, extract YAML from the target note to inherit some fields
     target_front_matter, _ = extract_yaml_front_matter(target_note_content)
 
+    moc_prompt_template_path = os.path.join(script_dir, 'moc_prompt_template.txt')
+
     # Update the prompt to ask for JSON output
-    prompt = generate_moc_prompt(found_path, target_note_content, similar_notes_with_content)
+    prompt = generate_moc_prompt(found_path, target_note_content, similar_notes_with_content, moc_prompt_template_path)
     gemini = GeminiClient(api_key)
     generated_response_json_str = gemini.generate_text(prompt)
     
     if generated_response_json_str.startswith("Error:"):
-        print(f"\n{generated_response_json_str}")
+        print(f"❌ Gemini Generation Error: {generated_response_json_str}")
         return
 
     try:
@@ -172,7 +164,7 @@ def main():
             key_details = "\n\n".join(formatted_details)
         if isinstance(moc_body, list): moc_body = "\n".join([str(item) for item in moc_body])
     except json.JSONDecodeError:
-        print(f"Error: Gemini did not return valid JSON. Response: {generated_response_json_str}")
+        print(f"\n❌ Gemini returned invalid data. Response: {generated_response_json_str}")
         return
 
     # Construct the MOC's YAML front matter
@@ -232,10 +224,12 @@ def main():
     moc_filename = f"{llm_suggested_title.replace(' ', '-').replace(':', '').replace('/', '-')}.md"
     moc_filepath = os.path.join(moc_save_path, moc_filename)
     
-    with open(moc_filepath, 'w', encoding='utf-8') as f:
-        f.write(final_moc_content)
-
-    print(f"\n✅ Success! New Map of Content created at: {moc_filepath}")
+    try:
+        with open(moc_filepath, 'w', encoding='utf-8') as f:
+            f.write(final_moc_content)
+        print(f"\n✅ Success! Map of Content saved to: {moc_filepath}")
+    except IOError as e:
+        print(f"\n❌ Error saving MOC to {moc_filepath}: {e}")
 
 if __name__ == '__main__':
     main()
