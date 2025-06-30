@@ -3,6 +3,7 @@ import configparser
 import re
 from datetime import datetime
 import json
+import argparse
 
 from sc_reader import SmartConnectionsReader
 from gemini_client import GeminiClient
@@ -64,8 +65,15 @@ Here are the wikilinks to include in the `key_details` or `body` sections:
 
 def main():
     """Main function to run the Knowledge Architect tool."""
+    parser = argparse.ArgumentParser(description="Generate a Map of Content (MOC) for a given note.")
+    parser.add_argument('-p', '--process-file', type=str,
+                        help="Relative path of the new note to process directly (e.g., 'UPSC/GS2/Polity.md').")
+    args = parser.parse_args()
+
     config = configparser.ConfigParser()
-    config.read('config.ini')
+    script_dir = os.path.dirname(__file__)
+    config_path = os.path.join(script_dir, 'config.ini')
+    config.read(config_path)
 
     vault_path = config['Paths']['vault_path']
     moc_save_path = config['Paths']['moc_save_path']
@@ -88,7 +96,11 @@ def main():
     reader.load_data()
     
     # 2. Get user input for the target note
-    target_note_relative = input("Enter the relative path of the new note (e.g., 'UPSC/GS2/Polity.md'): ").strip()
+    if args.process_file:
+        target_note_relative = args.process_file.strip().replace('\\', '/').strip('"\'')
+        print(f"Processing file from command line: {target_note_relative}")
+    else:
+        target_note_relative = input("Enter the relative path of the new note (e.g., 'UPSC/GS2/Polity.md'): ").strip().replace('\\', '/')
     
     # Obsidian paths are case-insensitive on some systems, find the correctly-cased path
     found_path = next((path for path in reader.notes if path.lower() == target_note_relative.lower()), None)
@@ -188,9 +200,9 @@ def main():
     related_links_yaml_str = ""
     related_links_body_str = ""
     for note in similar_notes_with_content:
-        link = f"[[{os.path.basename(note['path']).replace('.md', '')}]]"
-        related_links_yaml_str += f"  - {link}\n"
-        related_links_body_str += f"- {link}\n"
+        note_title = os.path.basename(note['path']).replace('.md', '')
+        related_links_yaml_str += f"  - {note_title}\n"
+        related_links_body_str += f"- [[{note_title}]]\n"
 
     # Populate the template
     final_moc_content = moc_template_content
