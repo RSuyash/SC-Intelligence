@@ -8,10 +8,11 @@ class GeminiClient:
         if not api_key or 'YOUR_API_KEY' in api_key:
             raise ValueError("Gemini API key is not configured in config.ini")
         genai.configure(api_key=api_key)
-        
+        # Always look for gemini_config.ini in the parent directory of this file's directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(script_dir)
+        config_path = os.path.join(parent_dir, 'gemini_config.ini')
         config = configparser.ConfigParser()
-        script_dir = os.path.dirname(__file__)
-        config_path = os.path.join(script_dir, 'gemini_config.ini')
         config.read(config_path)
         model_name = config['Gemini']['model_name']
         self.model = genai.GenerativeModel(model_name)
