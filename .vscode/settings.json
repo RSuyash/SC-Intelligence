@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./sc_copilot/core"
+    ]
+}
